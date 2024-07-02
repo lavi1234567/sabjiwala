@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GPS Sales Tracker</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+        }
+        #map {
+            height: 400px;
+            width: 100%;
+        }
+        #status {
+            margin: 20px 0;
+        }
+    </style>
+</head>
+<body>
+    <h1>GPS Sales Tracker</h1>
+    <div id="status">Waiting for location...</div>
+    <div id="map"></div>
+    <input type="text" id="ownerName" placeholder="Owner's Name (Optional)">
+    <input type="number" id="amount" placeholder="Enter amount">
+    <label for="sale">Sale</label>
+    <input type="radio" id="sale" name="transactionType" value="sale" checked>
+    <label for="borrowing">Borrowing</label>
+    <input type="radio" id="borrowing" name="transactionType" value="borrowing">
+    <button onclick="recordTransaction()">Record Transaction</button>
+    <button onclick="clearRoute()">Clear Route</button>
+    <div id="transactionsLog"></div>
+    <script>
+        let map;
+        let currentPosition;
+        const transactions = [];
+        const markers = [];
+        let polyline;
+        const mapId = '716f579381f3f21e'; // Replace with your actual Map ID
+
+        function initMap() {
+            map = new google.maps.Map(document.getElementById("map"), {
+                zoom: 15,
+                center: { lat: 0, lng: 0 },
+                mapId: mapId // Set the Map ID here
+            });
+            polyline = new google.maps.Polyline({
+                strokeColor: "#4287f5",
+                strokeOpacity: 1.0,
+                strokeWeight: 2,
+                map: map,
+            });
+            if (navigator.geolocation) {
+                const geoOptions = {
+                    enableHighAccuracy: true,
+                    timeout: 30000, // 30 seconds
+                    maximumAge: 60000 // 60 seconds
+                };
+                navigator.geolocation.watchPosition(
+                    position => {
+                        currentPosition = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude,
+                        };
+                        map.setCenter(currentPosition);
+                        checkForBorrowings();
+                        updatePolyline(currentPosition);
+                    },
+                    error => {
+                        document.getElementById("status").textContent = `Error: ${error.message}`;
+                        console.error(error);
+                    },
+                    geoOptions
+                );
+            } else {
+                document.getElementById("status").textContent = "Geolocation is not supported by this browser.";
+            }
+        }
+
+        function recordTransaction() {
+            const amount = parseFloat(document.getElementById("amount").value);
+            const ownerName = document.getElementById("ownerName").value.trim();
+            const transactionType = document.querySelector('input[name="transactionType"]:checked').value;
+            if (amount && currentPosition) {
+                const key = `${currentPosition.lat},${currentPosition.lng}`;
+                if (transactions[key] && transactions[key].owner === ownerName && transactions[key].type === 'borrowing') {
+                    // Update existing borrowing amount
+                    transactions[key].amount += amount;
+                    // Update marker label
+                    transactions[key].marker.setLabel(`${transactions[key].amount} by ${ownerName ? ownerName : 'Unknown'}`);
+                } else {
+                    // Add new borrowing
+                    const marker = new google.maps.Marker({
+                        position: currentPosition,
+                        map: map,
+                        label: `${amount} by ${ownerName ? ownerName : 'Unknown'}`
+                    });
+                    transactions[key] = { position: currentPosition, amount: amount, owner: ownerName, type: transactionType, marker: marker };
+                }
+                document.getElementById("transactionsLog").innerHTML += `${transactionType} of ${amount} recorded at (${currentPosition.lat}, ${currentPosition.lng}) by ${ownerName ? ownerName : 'Unknown'}<br>`;
+            } else {
+                alert("Please enter an amount and ensure location is available.");
+            }
+        }
+
+        function updateMarkers() {
+            markers.forEach(marker => marker.setMap(null));
+            markers.length = 0;
+
+            transactions.forEach(transaction => {
+                if (transaction.type === 'borrowing') {
+                    const marker = new google.maps.Marker({
+                        position: transaction.position,
+                        map: map,
+                        label: `${transaction.amount} by ${transaction.owner ? transaction.owner : 'Unknown'}`
+                    });
+                    markers.push(marker);
+                }
+            });
+        }
+
+        function updatePolyline(position) {
+            const path = polyline.getPath();
+            path.push(new google.maps.LatLng(position.lat, position.lng));
+            polyline.setPath(path);
+        }
+
+        function clearRoute() {
+            polyline.setMap(null); // Remove the polyline from the map
+            polyline = new google.maps.Polyline({ // Reinitialize the polyline
+                strokeColor: "#4287f5",
+                strokeOpacity: 1.0,
+                strokeWeight: 2,
+                map: map,
+            });
+        }
+
+        function checkForBorrowings() {
+            if (!currentPosition) return;
+            transactions.forEach(transaction => {
+                if (transaction.type === 'borrowing' && getDistance(currentPosition, transaction.position) < 0.01) {
+                    document.getElementById("status").textContent = `Pending borrowing: ${transaction.amount} at this location.`;
+                }
+            });
+        }
+
+        function getDistance(pos1, pos2) {
+            const R = 6371; // Radius of the Earth in km
+            const dLat = (pos2.lat - pos1.lat) * (Math.PI / 180);
+            const dLng = (pos2.lng - pos1.lng) * (Math.PI / 180);
+            const a =
+                Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+                Math.cos(pos1.lat * (Math.PI / 180)) * Math.cos(pos2.lat * (Math.PI / 180)) *
+                Math.sin(dLng / 2) * Math.sin(dLng / 2);
+            const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+            return R * c; // Distance in km
+        }
+    </script>
+    <script>
+        function loadScript(url, callback) {
+            const script = document.createElement("script");
+            script.type = "text/javascript";
+            script.src = url;
+            script.async = true;
+            script.defer = true;
+            script.onload = callback;
+            document.head.appendChild(script);
+        }
+
+        loadScript(
+            `https://maps.googleapis.com/maps/api/js?key=AIzaSyD97A-ZPjC080-KzkKVVsE_TJQ9r0spueg&callback=initMap&libraries=geometry`,
+            () => {
+                console.log("Google Maps API script loaded successfully.");
+            }
+        );
+    </script>
+</body>
+</html>
